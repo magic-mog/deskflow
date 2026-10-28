@@ -435,6 +435,14 @@ void MSWindowsComputer::getShape(int32_t &x, int32_t &y, int32_t &w, int32_t &h)
   h = m_h;
 }
 
+std::vector<IComputer::MonitorRect> MSWindowsComputer::getMonitors() const
+{
+  if (m_monitors.empty()) {
+    return {{m_x, m_y, m_w, m_h}};
+  }
+  return m_monitors;
+}
+
 void MSWindowsComputer::getCursorPos(int32_t &x, int32_t &y) const
 {
   m_desks->getCursorPos(x, y);
@@ -1440,6 +1448,28 @@ void MSWindowsComputer::updateComputerShape()
 
   // check for multiple monitors
   m_multimon = (m_w != GetSystemMetrics(SM_CXSCREEN) || m_h != GetSystemMetrics(SM_CYSCREEN));
+
+  // enumerate the individual monitors so the server can find inner edges
+  m_monitors.clear();
+  EnumDisplayMonitors(
+      nullptr, nullptr,
+      [](HMONITOR monitor, HDC, LPRECT, LPARAM data) -> BOOL {
+        MONITORINFO info{};
+        info.cbSize = sizeof(info);
+        if (GetMonitorInfo(monitor, &info)) {
+          const RECT &r = info.rcMonitor;
+          reinterpret_cast<std::vector<MonitorRect> *>(data)->push_back(
+              {static_cast<int32_t>(r.left), static_cast<int32_t>(r.top), static_cast<int32_t>(r.right - r.left),
+               static_cast<int32_t>(r.bottom - r.top)}
+          );
+        }
+        return TRUE;
+      },
+      reinterpret_cast<LPARAM>(&m_monitors)
+  );
+  for (const auto &m : m_monitors) {
+    LOG_DEBUG("monitor: %d,%d %dx%d", m.x, m.y, m.w, m.h);
+  }
 
   // tell the desks
   m_desks->setShape(m_x, m_y, m_w, m_h, m_xCenter, m_yCenter, m_multimon);

@@ -10,6 +10,9 @@
 
 #include "deskflow/ClipboardTypes.h"
 
+#include <cstdint>
+#include <vector>
+
 class IClipboard;
 
 //! Computer interface
@@ -49,6 +52,29 @@ public:
   \c y and the size of the computer in \c width and \c height.
   */
   virtual void getShape(int32_t &x, int32_t &y, int32_t &width, int32_t &height) const = 0;
+
+  //! A single physical monitor, in the same coordinate space as getShape()
+  struct MonitorRect
+  {
+    int32_t x;
+    int32_t y;
+    int32_t w;
+    int32_t h;
+  };
+
+  //! Get monitor layout
+  /*!
+  Return the individual monitors that make up the computer shape. The
+  default implementation returns the bounding box from getShape() as a
+  single monitor, which preserves the legacy behaviour on platforms that
+  do not report their monitors yet.
+  */
+  virtual std::vector<MonitorRect> getMonitors() const
+  {
+    MonitorRect r{};
+    getShape(r.x, r.y, r.w, r.h);
+    return {r};
+  }
 
   //! Get cursor position
   /*!
