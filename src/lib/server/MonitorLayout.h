@@ -49,9 +49,8 @@ struct ExposedEdges
   MonitorRect monitor{};
 };
 
-inline bool exposedEdgesAt(
-    const std::vector<MonitorRect> &monitors, int32_t x, int32_t y, int32_t zone, ExposedEdges &out
-)
+inline bool
+exposedEdgesAt(const std::vector<MonitorRect> &monitors, int32_t x, int32_t y, int32_t zone, ExposedEdges &out)
 {
   for (const auto &m : monitors) {
     if (!monitorContains(m, x, y)) {
