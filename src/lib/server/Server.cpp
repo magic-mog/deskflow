@@ -23,6 +23,7 @@
 #include "server/ClientListener.h"
 #include "server/ClientProxy.h"
 #include "server/ClientProxyUnknown.h"
+#include "server/MonitorLayout.h"
 #include "server/PrimaryClient.h"
 
 #ifdef _WIN32
@@ -731,6 +732,16 @@ BaseClientProxy *Server::mapToNeighbor(BaseClientProxy *src, Direction srcSide, 
   // a neighbor (i.e. an asymmetrical side) then we don't need to
   // move inwards because that side can't provoke a jump.
   avoidJumpZone(dst, srcSide, x, y);
+
+  // don't land in an empty corner of a non-rectangular monitor layout.
+  // move onto the nearest monitor, far enough in to stay out of its
+  // jump zones so the cursor doesn't immediately bounce back.
+  if (const auto monitors = dst->getMonitors(); monitors.size() > 1) {
+    using enum Direction;
+    const int32_t dirX = srcSide == Right ? 1 : (srcSide == Left ? -1 : 0);
+    const int32_t dirY = srcSide == Bottom ? 1 : (srcSide == Top ? -1 : 0);
+    deskflow::server::snapToMonitors(monitors, getJumpZoneSize(dst), x, y, dirX, dirY);
+  }
 
   return dst;
 }
@@ -1638,18 +1649,46 @@ bool Server::onMouseMovePrimary(int32_t x, int32_t y)
   m_active->getShape(ax, ay, aw, ah);
   int32_t zoneSize = getJumpZoneSize(m_active);
 
-  // clamp position to computer
+  // work out which edges the cursor is pushing against. with a single
+  // monitor (or a platform that doesn't report monitors) this is the
+  // bounding box, exactly as before. with several monitors, only the edges
+  // of the monitor under the cursor that don't touch another monitor count,
+  // so inner edges of an L- or T-shaped layout can lead to other computers.
+  int32_t ex = ax;
+  int32_t ey = ay;
+  int32_t ew = aw;
+  int32_t eh = ah;
+  bool atLeft = x < ax + zoneSize;
+  bool atRight = x >= ax + aw - zoneSize;
+  bool atTop = y < ay + zoneSize;
+  bool atBottom = y >= ay + ah - zoneSize;
+
+  if (const auto monitors = m_active->getMonitors(); monitors.size() > 1) {
+    deskflow::server::ExposedEdges edges;
+    if (deskflow::server::exposedEdgesAt(monitors, x, y, zoneSize, edges)) {
+      ex = edges.monitor.x;
+      ey = edges.monitor.y;
+      ew = edges.monitor.w;
+      eh = edges.monitor.h;
+      atLeft = edges.left;
+      atRight = edges.right;
+      atTop = edges.top;
+      atBottom = edges.bottom;
+    }
+  }
+
+  // clamp position to the edge being pushed against
   int32_t xc = x;
   int32_t yc = y;
-  if (xc < ax + zoneSize) {
-    xc = ax;
-  } else if (xc >= ax + aw - zoneSize) {
-    xc = ax + aw - 1;
+  if (atLeft) {
+    xc = ex;
+  } else if (atRight) {
+    xc = ex + ew - 1;
   }
-  if (yc < ay + zoneSize) {
-    yc = ay;
-  } else if (yc >= ay + ah - zoneSize) {
-    yc = ay + ah - 1;
+  if (atTop) {
+    yc = ey;
+  } else if (atBottom) {
+    yc = ey + eh - 1;
   }
 
   // see if we should change computers
@@ -1660,18 +1699,22 @@ bool Server::onMouseMovePrimary(int32_t x, int32_t y)
   auto dirv = NoDirection;
   int32_t xh = x;
   int32_t yv = y;
-  if (x < ax + zoneSize) {
-    xh -= zoneSize;
+  // the jump coordinate is expressed relative to the bounding box, so an
+  // inner edge is translated to the matching outer edge. the coordinate
+  // along the edge is left alone, so link ranges like down(0,33) still
+  // select the part of the edge the cursor crossed.
+  if (atLeft) {
+    xh = ax + (x - ex) - zoneSize;
     dirh = Left;
-  } else if (x >= ax + aw - zoneSize) {
-    xh += zoneSize;
+  } else if (atRight) {
+    xh = ax + aw + (x - (ex + ew)) + zoneSize;
     dirh = Right;
   }
-  if (y < ay + zoneSize) {
-    yv -= zoneSize;
+  if (atTop) {
+    yv = ay + (y - ey) - zoneSize;
     dirv = Top;
-  } else if (y >= ay + ah - zoneSize) {
-    yv += zoneSize;
+  } else if (atBottom) {
+    yv = ay + ah + (y - (ey + eh)) + zoneSize;
     dirv = Bottom;
   }
   if (dirh == NoDirection && dirv == NoDirection) {

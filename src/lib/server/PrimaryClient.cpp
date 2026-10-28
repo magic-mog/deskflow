@@ -84,6 +84,11 @@ void PrimaryClient::getShape(int32_t &x, int32_t &y, int32_t &width, int32_t &he
   m_computer->getShape(x, y, width, height);
 }
 
+std::vector<IComputer::MonitorRect> PrimaryClient::getMonitors() const
+{
+  return m_computer->getMonitors();
+}
+
 void PrimaryClient::getCursorPos(int32_t &x, int32_t &y) const
 {
   m_computer->getCursorPos(x, y);
